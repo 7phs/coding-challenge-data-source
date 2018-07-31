@@ -2,6 +2,7 @@ package data
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"sync"
@@ -27,6 +28,8 @@ type Source struct {
 	filters           []RecordFilter
 	errorListen       []ErrorListener
 	waitErrorListener sync.WaitGroup
+
+	recordIndex int
 }
 
 // A constructor of the source
@@ -54,8 +57,10 @@ func (o *Source) Filter(filter RecordFilter) *Source {
 }
 
 // Calling all user callbacks in a goroutine to transfer an error into it.
-func (o *Source) raiseError(lineNumber int, err error) error {
-	err = fmt.Errorf("line #%d: %s", lineNumber, err)
+func (o *Source) raiseError(err error) error {
+	if o.recordIndex > 0 {
+		err = fmt.Errorf("line #%d: %s", o.recordIndex, err)
+	}
 
 	if len(o.errorListen) > 0 {
 		o.waitErrorListener.Add(1)
@@ -117,38 +122,52 @@ func (o *Source) unmarshalRecord(line []byte) (interface{}, error) {
 	return record, nil
 }
 
+// Reading a line and unmarshaling it into a record.
+func (o *Source) readRecord() (interface{}, error) {
+	line, err := o.readLine()
+	if err != nil {
+		if err != io.EOF {
+			return nil, err
+		}
+		return nil, io.EOF
+	}
+
+	if len(bytes.TrimSpace(line)) == 0 {
+		return nil, nil
+	}
+
+	// the first time checking marshaling
+	if o.recordIndex == 0 {
+		if err := o.matchUnMarshaling(line); err != nil {
+			return nil, err
+		}
+	}
+
+	o.recordIndex++
+
+	record, err := o.unmarshalRecord(line)
+	if err != nil {
+		// just skip an unmarshaling error, but reporting listeners
+		o.raiseError(err)
+		return nil, nil
+	}
+
+	return record, nil
+}
+
 // A primary workflow. Reading records from data, filtering it and collecting its into a result list.
 func (o *Source) Collect() (result RecordList) {
 	defer o.waitErrorListener.Wait()
 
-	index := 0
-
 	for {
-		line, err := o.readLine()
+		record, err := o.readRecord()
 		if err != nil {
 			if err != io.EOF {
-				o.raiseError(index+1, err)
+				o.raiseError(err)
 			}
+
 			return
-		}
-
-		// the first time checking marshaling
-		if index == 0 {
-			if err := o.matchUnMarshaling(line); err != nil {
-				o.raiseError(index+1, err)
-				return
-			}
-		}
-
-		index++
-
-		record, err := o.unmarshalRecord(line)
-		if err != nil {
-			o.raiseError(index+1, err)
-			continue
-		}
-
-		if record == nil {
+		} else if record == nil {
 			continue
 		}
 

@@ -62,3 +62,29 @@ func TestRecordList_Sort(t *testing.T) {
 		t.Error("failed to sort a list. Got \n", exist, "\n, but expected is \n", expected)
 	}
 }
+
+func TestRecordList_Map(t *testing.T) {
+	type testRec struct {
+		id   int
+		name string
+	}
+
+	exist := (RecordList{
+		testRec{id: 0, name: "test"},
+		testRec{id: 1, name: "test3"},
+	}).Map(func(rec interface{}) interface{} {
+		return testRec{
+			id:   rec.(testRec).id + 1,
+			name: rec.(testRec).name + ":updated",
+		}
+	})
+
+	expected := RecordList{
+		testRec{id: 1, name: "test:updated"},
+		testRec{id: 2, name: "test3:updated"},
+	}
+
+	if !reflect.DeepEqual(exist, expected) {
+		t.Error("failed to map a list. Got \n", exist, "\n, but expected is \n", expected)
+	}
+}

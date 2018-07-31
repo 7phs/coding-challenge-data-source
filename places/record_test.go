@@ -2,10 +2,11 @@ package places
 
 import (
 	"fmt"
-	"github.com/7phs/coding-challenge-data-source/data"
 	"math"
 	"strings"
 	"testing"
+
+	"github.com/7phs/coding-challenge-data-source/data"
 )
 
 func TestRecord_String(t *testing.T) {
@@ -51,17 +52,21 @@ func TestRecord_Validate(t *testing.T) {
 	}
 
 	for _, test := range testSuites {
-		err := test.in.Validate().Error()
+		err := test.in.Validate()
+		if err == nil && len(test.errFields) > 0 {
+			t.Error("failed to catch an error")
+			continue
+		}
 
 		exist := 0
 		for _, field := range test.errFields {
-			if strings.Index(err, field) >= 0 {
+			if strings.Index(err.Error(), field) >= 0 {
 				exist++
 			}
 		}
 
 		if expected := len(test.errFields); exist != expected {
-			t.Error("failed to validate a record. Got '" + err + "', but expected fields '" + strings.Join(test.errFields, ", ") + "'")
+			t.Error("failed to validate a record. Got '" + err.Error() + "', but expected fields '" + strings.Join(test.errFields, ", ") + "'")
 		}
 	}
 }

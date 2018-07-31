@@ -89,7 +89,7 @@ func (o *Record) Validate() error {
 		errList.Add(errors.New("longitude: less than -180 or great than 180"))
 	}
 
-	return errList
+	return errList.Finish()
 }
 
 // Calculating a great-circle distance between two places.

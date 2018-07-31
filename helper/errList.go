@@ -27,3 +27,11 @@ func (o ErrList) Error() string {
 
 	return buf.String()
 }
+
+func (o ErrList) Finish() error {
+	if len(o) == 0 {
+		return nil
+	}
+
+	return o
+}
