@@ -7,6 +7,8 @@ import (
 
 func Usage(appInfo string) {
 	fmt.Println(appInfo)
-	fmt.Println("Usage: dublin-office-neighbors <options> data-file")
+	fmt.Println("")
+	fmt.Println("Usage: office-neighbors <options> data-file")
 	flag.PrintDefaults()
+	fmt.Println("")
 }

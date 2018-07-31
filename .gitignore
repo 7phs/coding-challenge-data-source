@@ -1,4 +1,5 @@
 .idea
 .DS_Store
+/*.txt
 /vendor
-/dublin-office-neighbors
+/office-neighbors

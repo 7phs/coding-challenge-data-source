@@ -3,6 +3,7 @@ package data
 import (
 	"bufio"
 	"io"
+	"sync"
 )
 
 type ValidatedRecord interface {
@@ -11,16 +12,15 @@ type ValidatedRecord interface {
 
 type RecordFabric func() ValidatedRecord
 type RecordFilter func(interface{}) bool
+type ErrorListener func(error)
 
 type Source struct {
-	reader       *bufio.Reader
-	recordFabric RecordFabric
-	unMarshaling RecordUnMarshaling
-	filters      []RecordFilter
-
-	recordCount int
-
-	fatalErr error
+	reader            *bufio.Reader
+	recordFabric      RecordFabric
+	unMarshaling      RecordUnMarshaling
+	filters           []RecordFilter
+	errorListen       []ErrorListener
+	waitErrorListener sync.WaitGroup
 }
 
 func NewSource(reader io.Reader, fabric RecordFabric) *Source {
@@ -34,10 +34,10 @@ func NewSource(reader io.Reader, fabric RecordFabric) *Source {
 	return o
 }
 
-func (o *Source) matchUnMarshaling(line []byte, record interface{}) error {
-	o.unMarshaling, o.fatalErr = MatchUnMarshaling(line, record)
+func (o *Source) matchUnMarshaling(line []byte, record interface{}) (err error) {
+	o.unMarshaling, err = MatchUnMarshaling(line, record)
 
-	return o.fatalErr
+	return err
 }
 
 func (o *Source) Filter(filter RecordFilter) *Source {
@@ -47,13 +47,22 @@ func (o *Source) Filter(filter RecordFilter) *Source {
 }
 
 func (o *Source) raiseError(err error) error {
-	o.fatalErr = err
+	o.waitErrorListener.Add(1)
+	go func() {
+		defer o.waitErrorListener.Done()
+
+		for _, errCallback := range o.errorListen {
+			errCallback(err)
+		}
+	}()
 
 	return err
 }
 
-func (o *Source) HasError() error {
-	return o.fatalErr
+func (o *Source) Catch(errCallback ErrorListener) *Source {
+	o.errorListen = append(o.errorListen, errCallback)
+
+	return o
 }
 
 func (o *Source) readLine() ([]byte, error) {
@@ -86,32 +95,65 @@ func (o *Source) unmarshalRecord(line []byte) (interface{}, error) {
 		return nil, o.raiseError(err)
 	}
 
-	if record.Validate() != nil {
-		return nil, nil
+	if err := record.Validate(); err != nil {
+		return nil, err
 	}
 
-	for _, filter := range o.filters {
-		if !filter(record) {
-			return nil, nil
-		}
+	return record, nil
+}
+
+func (o *Source) parseFirstLine() (interface{}, error) {
+	line, err := o.readLine()
+	if err != nil {
+		return nil, err
+	}
+
+	record, err := o.unmarshalRecord(line)
+	if err != nil {
+		return nil, err
 	}
 
 	return record, nil
 }
 
 func (o *Source) Collect() (result RecordList) {
+	defer o.waitErrorListener.Wait()
+
+	record, err := o.parseFirstLine()
+	if err != nil {
+		o.raiseError(err)
+		return
+	}
+
+	result.Add(record)
+
 	for {
 		line, err := o.readLine()
 		if err != nil {
+			if err != io.EOF {
+				o.raiseError(err)
+			}
 			return
 		}
 
 		record, err := o.unmarshalRecord(line)
 		if err != nil {
-			return
+			o.raiseError(err)
+			continue
 		}
 
 		if record == nil {
+			continue
+		}
+
+		if !(func() bool {
+			for _, filter := range o.filters {
+				if !filter(record) {
+					return false
+				}
+			}
+			return true
+		})() {
 			continue
 		}
 

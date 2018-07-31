@@ -16,7 +16,7 @@ const (
 
 var (
 	DefaultPlace = (&Record{
-		Name:      "Intercom Dublin Office",
+		Name:      "Central Office",
 		Latitude:  53.339428,
 		Longitude: -6.257664,
 	}).preCalc()
