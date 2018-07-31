@@ -5,6 +5,7 @@ import (
 	"fmt"
 )
 
+// Show a usage information of the application.
 func Usage(appInfo string) {
 	fmt.Println(appInfo)
 	fmt.Println("")

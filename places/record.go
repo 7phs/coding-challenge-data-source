@@ -7,6 +7,7 @@ import (
 	"math"
 
 	"github.com/7phs/coding-challenge-data-source/data"
+	"github.com/7phs/coding-challenge-data-source/helper"
 )
 
 const (
@@ -15,6 +16,7 @@ const (
 )
 
 var (
+	// The default place is a center of an area to find neighbours in it.
 	DefaultPlace = (&Record{
 		Name:      "Central Office",
 		Latitude:  53.339428,
@@ -22,25 +24,30 @@ var (
 	}).preCalc()
 )
 
+// A record to store an information about a person: id, name and coordinate.
 type Record struct {
 	Id        int        `json:"user_id"`
 	Name      string     `json:"name"`
 	Latitude  data.Float `json:"latitude"`
 	Longitude data.Float `json:"longitude"`
 
+	// pre-calculated values to prevent repeated calculation
 	lat    float64
 	long   float64
 	cosLat float64
 }
 
+// A fabric method to creating a record implementing a validation interface
 func NewRecordFabric() data.ValidatedRecord {
 	return NewRecord()
 }
 
+// A default constructor of a record
 func NewRecord() *Record {
 	return &Record{}
 }
 
+// Pre-calculating a latitude and a longitude in radial coordinates.
 func (o *Record) preCalc() *Record {
 	o.lat = float64(o.Latitude) * RadialCoefficient
 	o.long = float64(o.Longitude) * RadialCoefficient
@@ -50,6 +57,7 @@ func (o *Record) preCalc() *Record {
 	return o
 }
 
+// Stringify a record.
 func (o *Record) String() string {
 	buf := bytes.NewBufferString("")
 	if o.Id > 0 {
@@ -61,27 +69,31 @@ func (o *Record) String() string {
 	return buf.String()
 }
 
+// Validate fields of a record. Checking empty id, empty name and coordinate are over an edge.
 func (o *Record) Validate() error {
+	var errList helper.ErrList
+
 	if o.Id <= 0 {
-		return errors.New("id: empty")
+		errList.Add(errors.New("id: empty"))
 	}
 
 	if len(o.Name) == 0 {
-		return errors.New("name: empty")
+		errList.Add(errors.New("name: empty"))
 	}
 
 	if o.Latitude < -90. || o.Latitude > 90. {
-		return errors.New("latitude: less than -90 or great than 90")
+		errList.Add(errors.New("latitude: less than -90 or great than 90"))
 	}
 
 	if o.Longitude < -180. || o.Longitude > 180. {
-		return errors.New("longitude: less than -180 or great than 180")
+		errList.Add(errors.New("longitude: less than -180 or great than 180"))
 	}
 
-	return nil
+	return errList
 }
 
-// http://www.movable-type.co.uk/scripts/latlong.html
+// Calculating a great-circle distance between two places.
+// Based on a code from http://www.movable-type.co.uk/scripts/latlong.html
 func (o *Record) Distance(p *Record) float64 {
 	p.preCalc()
 

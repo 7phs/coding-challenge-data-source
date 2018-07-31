@@ -7,11 +7,13 @@ import (
 	"github.com/7phs/coding-challenge-data-source/places"
 )
 
+// Options of the application
 type Args struct {
-	FileName string
-	Distance float64
+	FileName string  // A path of data file
+	Distance float64 // A distance from the office point till an edge of a filter of persons list
 }
 
+// Parsing the command-line arguments
 func ParseArgs() (args *Args, err error) {
 	args = &Args{}
 

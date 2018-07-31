@@ -5,15 +5,17 @@ import (
 )
 
 const (
-	ApplicationName = "Dublin Office Neighbors"
+	ApplicationName = "Office Neighbors"
 	Version         = "0.1"
 )
 
+// Variables will initialisation at building time
 var (
 	GitHash   string // should be uninitialized
 	BuildTime string // should be uninitialized
 )
 
+// Show an information about the application - a title, a version and building stamps
 func ApplicationInfo() string {
 	return ApplicationName + " " + Version + " [" + GitHash + "] " + BuildTime
 }

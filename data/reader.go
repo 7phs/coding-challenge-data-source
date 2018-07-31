@@ -2,18 +2,24 @@ package data
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"sync"
 )
 
+// An interface for validation record, which required for Reader.
 type ValidatedRecord interface {
 	Validate() error
 }
 
+// Short descriptions for callback function
 type RecordFabric func() ValidatedRecord
 type RecordFilter func(interface{}) bool
 type ErrorListener func(error)
 
+// A data source is using to read data and parsing lines to records.
+// A source is possible filtering a parsed record using a user callback.
+// Supporting automatically find a good fit unmarshaller from supported.
 type Source struct {
 	reader            *bufio.Reader
 	recordFabric      RecordFabric
@@ -23,48 +29,56 @@ type Source struct {
 	waitErrorListener sync.WaitGroup
 }
 
+// A constructor of the source
 func NewSource(reader io.Reader, fabric RecordFabric) *Source {
 	o := &Source{
 		reader:       bufio.NewReader(reader),
 		recordFabric: fabric,
 	}
 
-	o.unMarshaling = o.matchUnMarshaling
-
 	return o
 }
 
-func (o *Source) matchUnMarshaling(line []byte, record interface{}) (err error) {
-	o.unMarshaling, err = MatchUnMarshaling(line, record)
+// A
+func (o *Source) matchUnMarshaling(line []byte) (err error) {
+	o.unMarshaling, err = MatchUnMarshaling(line)
 
 	return err
 }
 
+// Register a user function as a filter callback.
 func (o *Source) Filter(filter RecordFilter) *Source {
 	o.filters = append(o.filters, filter)
 
 	return o
 }
 
-func (o *Source) raiseError(err error) error {
-	o.waitErrorListener.Add(1)
-	go func() {
-		defer o.waitErrorListener.Done()
+// Calling all user callbacks in a goroutine to transfer an error into it.
+func (o *Source) raiseError(lineNumber int, err error) error {
+	err = fmt.Errorf("line #%d: %s", lineNumber, err)
 
-		for _, errCallback := range o.errorListen {
-			errCallback(err)
-		}
-	}()
+	if len(o.errorListen) > 0 {
+		o.waitErrorListener.Add(1)
+		go func() {
+			defer o.waitErrorListener.Done()
+
+			for _, errCallback := range o.errorListen {
+				errCallback(err)
+			}
+		}()
+	}
 
 	return err
 }
 
+// Register a function as an error listener.
 func (o *Source) Catch(errCallback ErrorListener) *Source {
 	o.errorListen = append(o.errorListen, errCallback)
 
 	return o
 }
 
+// Reading a whole line from the data without dividing on a pieces.
 func (o *Source) readLine() ([]byte, error) {
 	var (
 		line     []byte
@@ -80,7 +94,7 @@ func (o *Source) readLine() ([]byte, error) {
 				return nil, err
 			}
 
-			return nil, o.raiseError(err)
+			return nil, err
 		}
 
 		line = append(line, piece...)
@@ -89,10 +103,11 @@ func (o *Source) readLine() ([]byte, error) {
 	return line, nil
 }
 
+// Unmarshal a read line into a required record using an automatically detected unmarshaller.
 func (o *Source) unmarshalRecord(line []byte) (interface{}, error) {
 	record := o.recordFabric()
 	if err := o.unMarshaling(line, record); err != nil {
-		return nil, o.raiseError(err)
+		return nil, err
 	}
 
 	if err := record.Validate(); err != nil {
@@ -102,43 +117,34 @@ func (o *Source) unmarshalRecord(line []byte) (interface{}, error) {
 	return record, nil
 }
 
-func (o *Source) parseFirstLine() (interface{}, error) {
-	line, err := o.readLine()
-	if err != nil {
-		return nil, err
-	}
-
-	record, err := o.unmarshalRecord(line)
-	if err != nil {
-		return nil, err
-	}
-
-	return record, nil
-}
-
+// A primary workflow. Reading records from data, filtering it and collecting its into a result list.
 func (o *Source) Collect() (result RecordList) {
 	defer o.waitErrorListener.Wait()
 
-	record, err := o.parseFirstLine()
-	if err != nil {
-		o.raiseError(err)
-		return
-	}
-
-	result.Add(record)
+	index := 0
 
 	for {
 		line, err := o.readLine()
 		if err != nil {
 			if err != io.EOF {
-				o.raiseError(err)
+				o.raiseError(index+1, err)
 			}
 			return
 		}
 
+		// the first time checking marshaling
+		if index == 0 {
+			if err := o.matchUnMarshaling(line); err != nil {
+				o.raiseError(index+1, err)
+				return
+			}
+		}
+
+		index++
+
 		record, err := o.unmarshalRecord(line)
 		if err != nil {
-			o.raiseError(err)
+			o.raiseError(index+1, err)
 			continue
 		}
 
